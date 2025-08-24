@@ -1,1 +1,53 @@
 *.class
+
+# Maven target directory
+target/
+**/target/
+
+# Log files
+*.log
+
+# Eclipse files
+.classpath
+.project
+.settings/
+bin/
+
+# IntelliJ IDEA files
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code files
+.vscode/
+
+# Mac OS files
+.DS_Store
+
+# Windows files
+Thumbs.db
+
+.mvn/wrapper/maven-wrapper.properties
+
+# Dependency directories (should be downloaded by Maven)
+**/dependency-reduced-pom.xml
+
+# Build output directories
+build/
+out/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Package Files
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Virtual machine crash logs
+hs_err_pid*
