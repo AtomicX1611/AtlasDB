@@ -1,4 +1,4 @@
-package utils;
+package Replication.utils;
 public class LogEntry {
     
     public final int index;

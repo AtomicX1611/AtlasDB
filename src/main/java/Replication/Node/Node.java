@@ -1,8 +1,8 @@
-package Node;
+package Replication.Node;
 import java.util.ArrayList;
 import java.util.List;
 
-import utils.LogEntry;
+import Replication.utils.LogEntry;
 
 public class Node {
     private boolean isActive;

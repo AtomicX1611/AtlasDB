@@ -1,10 +1,10 @@
-package Cluster;
+package Replication.Cluster;
 import java.util.ArrayList;
 import java.util.List;
 
-import Node.Node;
-import Replicator.Replicator;
-import utils.LogEntry;
+import Replication.Node.Node;
+import Replication.Replicator.Replicator;
+import Replication.utils.LogEntry;
 
 public class Cluster{
     private final List<Node> nodes;
@@ -35,9 +35,10 @@ public class Cluster{
     }
 
     public void replicateAsynchronous(String command){
-       LogEntry logEntry = new LogEntry(leader.getLog().size() - 1, command);
-       leader.append(logEntry);
-       replicator.replicateAsync(leader, this, logEntry);
+       int index = (leader.getLog().size() == 0) ? 0 : leader.getLog().size();
+       LogEntry entry = new LogEntry(index, command);
+       leader.append(entry);
+       replicator.replicateAsync(leader, this, entry);
     }
 
     public void printLogs() {

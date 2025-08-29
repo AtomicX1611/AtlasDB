@@ -1,24 +1,17 @@
-
+package Replication;
 import java.util.List;
 
-import Cluster.Cluster;
-import Node.Node;
+import Replication.Cluster.Cluster;
+import Replication.Node.Node;
 
 public class server {
     public static void main(String[] args) {
         Cluster cluster = new Cluster(3); 
 
-        try {
-             cluster.replicateSynchronous("SET x = 1");  
-             cluster.printLogs();  
-             List<Node> followers = cluster.getFollowers();
-             Node node = followers.get(0);
-             System.out.println("Setting inactive for node : "+node.getId());
-             node.setIsActive(false);
-             cluster.replicateSynchronous("SET X = 2");
-             System.out.println("replicated");
+        try{
+             cluster.replicateAsynchronous("Set X = 10");
              cluster.printLogs();
-        } catch (Exception e) {
+        } catch(Exception e) {
             System.out.println("Error Occurred : "+e.getMessage());
         }
     } 
