@@ -27,7 +27,7 @@ public class Node {
 
     public void append(LogEntry entry) {
         logs.add(entry);
-        // System.out.println(id + " appended: " + entry);
+        System.out.println(id + " appended: " + entry);
     }
 
     public List<LogEntry> getLog() { return logs; }
