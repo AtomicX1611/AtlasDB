@@ -36,9 +36,11 @@ public class Cluster{
             if (meta.getId().equals("leader")) leader = node;
         }
 
+        leader.startServer();
+        for(Node node : nodes){
+            node.startServer();
+        }
     }
-
-    public Node getLeader() { return leader; }
 
     public List<Node> getFollowers() {
         return nodes;

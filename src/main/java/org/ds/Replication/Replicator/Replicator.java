@@ -114,5 +114,9 @@ public class Replicator {
             System.out.println("Exception occurred : "+e.getMessage());
         }
     }
+
+    public void replicateToFollower(String leaderId, String host, int port, String command){
+
+    }
 }
 

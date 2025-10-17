@@ -1,6 +1,7 @@
 package org.ds.Replication.Node;
 
 import io.grpc.Server;
+import io.grpc.ServerBuilder;
 import org.ds.Replication.Cluster.NodeMetaData;
 import org.ds.Replication.utils.LogEntry;
 
@@ -49,6 +50,18 @@ public class Node {
 
     public void setIsActive(boolean val){
         isActive = val;
+    }
+
+    public void startServer(){
+        try{
+            grpcServer = ServerBuilder.forPort(port)
+                    .addService(new RaftServiceImpl())
+                    .build()
+                    .start();
+            System.out.println("Started the grpc server on port "+port);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 }
