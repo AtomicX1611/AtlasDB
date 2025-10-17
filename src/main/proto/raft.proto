@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package org.ds.proto;
+
+service RaftService {
+  rpc AppendEntries(AppendRequest) returns (AppendResponse);
+}
+
+message AppendRequest {
+  string leaderId = 1;
+  int32 entryIndex = 2;
+  string command = 3;
+}
+
+message AppendResponse {
+  bool success = 1;
+}
