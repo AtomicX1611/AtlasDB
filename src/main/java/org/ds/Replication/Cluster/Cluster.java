@@ -36,14 +36,14 @@ public class Cluster{
             if (meta.getId().equals("leader")) leader = node;
         }
 
-        leader.startServer();
         for(Node node : nodes){
             node.startServer();
         }
+        leader.startServer();
     }
 
     public List<Node> getFollowers() {
-        return nodes;
+        return nodes.stream().filter(n -> !n.isLeader()).toList();
     }
 
     public void replicateSynchronous(String command){
@@ -58,6 +58,20 @@ public class Cluster{
         LogEntry entry = new LogEntry(index, command);
         leader.append(entry);
         replicator.replicateAsync(leader, this, entry);
+    }
+
+    public void replicate(String command){
+        int index = leader.getLog().size();
+        LogEntry entry = new LogEntry(index, command);
+
+        leader.append(entry);
+
+        for(Node node : getFollowers()){
+            if(node.getIsActive()){
+                NodeMetaData data = clusterMembers.get(node.getId());
+                replicator.replicateToFollower(leader.getId(), data.getHost(), data.getPort(), command);
+            }
+        }
     }
 
     public void printLogs() {

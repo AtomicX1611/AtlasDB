@@ -3,6 +3,7 @@ package org.ds.Replication.Node;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import org.ds.Replication.Cluster.NodeMetaData;
+import org.ds.Replication.RaftServiceImpl;
 import org.ds.Replication.utils.LogEntry;
 
 import java.util.ArrayList;
@@ -55,12 +56,18 @@ public class Node {
     public void startServer(){
         try{
             grpcServer = ServerBuilder.forPort(port)
-                    .addService(new RaftServiceImpl())
+                    .addService(new RaftServiceImpl(this))
                     .build()
                     .start();
             System.out.println("Started the grpc server on port "+port);
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+    public void shutDown(){
+        if(grpcServer != null){
+            grpcServer.shutdown();
+            System.out.println("server shutting down for id : "+id);
         }
     }
 
