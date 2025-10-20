@@ -17,13 +17,10 @@ public class RaftServiceImpl extends RaftServiceGrpc.RaftServiceImplBase {
     @Override
     public void appendEntries(Raft.AppendRequest request, StreamObserver<Raft.AppendResponse> responseObserver) {
        try{
-           System.out.println("Received append Entry req from Leader "+request.getLeaderId());
-           System.out.println("Command : "+request.getCommand());
            node.append(new LogEntry(request.getEntryIndex(), request.getCommand()));
            Raft.AppendResponse response = Raft.AppendResponse.newBuilder()
                    .setSuccess(true)
                    .build();
-
            responseObserver.onNext(response);
            responseObserver.onCompleted();
        } catch (Exception e) {
