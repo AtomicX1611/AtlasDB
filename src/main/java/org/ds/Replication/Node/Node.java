@@ -19,6 +19,8 @@ public class Node {
     private boolean isActive;
     private final Map<String, NodeMetaData> clusterMembers;
     private Server grpcServer;
+    private int currentTerm;
+    private int commitIndex;
 
     public Node(String id, boolean isLeader, String host, int port, Map<String, NodeMetaData> clusterMembers){
         this.isLeader = isLeader;
@@ -28,6 +30,8 @@ public class Node {
         isActive = true;
         this.host = host;
         this.port = port;
+        this.currentTerm = 1;
+        this.commitIndex = -1;
     }
 
     public String getId(){
@@ -43,6 +47,16 @@ public class Node {
     }
 
     public List<LogEntry> getLog() { return logs; }
+
+    public int getCurrentTerm(){ return currentTerm; }
+
+    public void setCurrentTerm(int term){ this.currentTerm = term; }
+
+    public int getCommitIndex(){ return commitIndex; }
+
+    public void setCommitIndex(int commitIndex){ this.commitIndex = commitIndex; }
+
+    public int getLastLogIndex(){ return logs.isEmpty() ? -1 : logs.get(logs.size() - 1).index; }
 
     public boolean getIsActive(){
         return isActive;

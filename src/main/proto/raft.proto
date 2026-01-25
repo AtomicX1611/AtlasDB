@@ -4,14 +4,38 @@ package org.ds.proto;
 
 service RaftService {
   rpc AppendEntries(AppendRequest) returns (AppendResponse);
+  rpc RequestVote(VoteRequest) returns (VoteResponse);
+}
+
+message LogEntry {
+  int32 index = 1;
+  int32 term = 2;
+  string command = 3;
 }
 
 message AppendRequest {
   string leaderId = 1;
-  int32 entryIndex = 2;
-  string command = 3;
+  int32 term = 2;
+  int32 prevLogIndex = 3;
+  int32 prevLogTerm = 4;
+  repeated LogEntry entries = 5;
+  int32 leaderCommit = 6;
 }
 
 message AppendResponse {
-  bool success = 1;
+  int32 term = 1;
+  bool success = 2;
+  int32 matchIndex = 3;
+}
+
+message VoteRequest {
+  string candidateId = 1;
+  int32 term = 2;
+  int32 lastLogIndex = 3;
+  int32 lastLogTerm = 4;
+}
+
+message VoteResponse {
+  int32 term = 1;
+  bool voteGranted = 2;
 }

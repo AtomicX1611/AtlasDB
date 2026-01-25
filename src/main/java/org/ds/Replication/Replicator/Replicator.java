@@ -3,8 +3,6 @@ package org.ds.Replication.Replicator;
 
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import org.ds.Replication.Cluster.Cluster;
-import org.ds.Replication.Node.Node;
 import org.ds.Replication.utils.LogEntry;
 import org.ds.proto.Raft;
 import org.ds.proto.RaftServiceGrpc;
@@ -18,17 +16,34 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Replicator {
 
-    //Perform network replication.
-    public void replicateToFollower(String leaderId, String host, int port, String command){
+    public void replicateToFollower(
+            String leaderId,
+            int leaderTerm,
+            int prevLogIndex,
+            int prevLogTerm,
+            int leaderCommit,
+            String host,
+            int port,
+            LogEntry entry){
         ManagedChannel channel = ManagedChannelBuilder
                 .forAddress(host,port)
                 .usePlaintext()
                 .build();
         RaftServiceGrpc.RaftServiceBlockingStub stub = RaftServiceGrpc.newBlockingStub(channel);
 
+        Raft.LogEntry logEntry = Raft.LogEntry.newBuilder()
+                .setIndex(entry.index)
+                .setTerm(entry.term)
+            .setCommand(entry.getLog())
+                .build();
+
         Raft.AppendRequest request = Raft.AppendRequest.newBuilder()
                 .setLeaderId(leaderId)
-                .setCommand(command)
+                .setTerm(leaderTerm)
+                .setPrevLogIndex(prevLogIndex)
+                .setPrevLogTerm(prevLogTerm)
+                .addEntries(logEntry)
+                .setLeaderCommit(leaderCommit)
                 .build();
 
         try {

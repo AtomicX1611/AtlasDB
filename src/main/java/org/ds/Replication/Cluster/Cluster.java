@@ -52,14 +52,28 @@ public class Cluster{
 
     public void replicate(String command){
         int index = leader.getLog().size();
-        LogEntry entry = new LogEntry(index, command);
+        int term = leader.getCurrentTerm();
+        LogEntry entry = new LogEntry(index, term, command);
 
         leader.append(entry);
 
         for(Node node : getFollowers()){
+            System.out.println("All the followers : "+node.getId());
             if(node.getIsActive() && !node.isLeader()){
                 NodeMetaData data = clusterMembers.get(node.getId());
-                replicator.replicateToFollower(leader.getId(), data.getHost(), data.getPort(), command);
+                int prevLogIndex = index - 1;
+                int prevLogTerm = prevLogIndex >= 0 ? leader.getLog().get(prevLogIndex).term : 0;
+                int leaderCommit = leader.getCommitIndex();
+                replicator.replicateToFollower(
+                        leader.getId(),
+                        term,
+                        prevLogIndex,
+                        prevLogTerm,
+                        leaderCommit,
+                        data.getHost(),
+                        data.getPort(),
+                        entry
+                );
             }
         }
     }
