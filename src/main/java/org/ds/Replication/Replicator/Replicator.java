@@ -4,7 +4,7 @@ package org.ds.Replication.Replicator;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import org.ds.Replication.utils.LogEntry;
-import org.ds.proto.Raft;
+import org.ds.proto.*;
 import org.ds.proto.RaftServiceGrpc;
 
 import java.util.List;
@@ -31,13 +31,13 @@ public class Replicator {
                 .build();
         RaftServiceGrpc.RaftServiceBlockingStub stub = RaftServiceGrpc.newBlockingStub(channel);
 
-        Raft.LogEntry logEntry = Raft.LogEntry.newBuilder()
+        org.ds.proto.LogEntry logEntry = org.ds.proto.LogEntry.newBuilder()
                 .setIndex(entry.index)
                 .setTerm(entry.term)
             .setCommand(entry.getLog())
                 .build();
 
-        Raft.AppendRequest request = Raft.AppendRequest.newBuilder()
+        AppendRequest request = AppendRequest.newBuilder()
                 .setLeaderId(leaderId)
                 .setTerm(leaderTerm)
                 .setPrevLogIndex(prevLogIndex)
@@ -47,7 +47,7 @@ public class Replicator {
                 .build();
 
         try {
-            Raft.AppendResponse response = stub.appendEntries(request);
+            AppendResponse response = stub.appendEntries(request);
             System.out.println("Response from follower (" + host + ":" + port + ") => " + response.getSuccess());
         } catch (Exception e) {
             System.err.println("Failed to replicate to " + host + ":" + port + " => " + e.getMessage());
