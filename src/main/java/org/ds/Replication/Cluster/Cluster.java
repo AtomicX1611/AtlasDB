@@ -5,7 +5,6 @@ import org.ds.Replication.Node.Node;
 import org.ds.Replication.Replicator.Replicator;
 import org.ds.Replication.utils.LogEntry;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -17,7 +16,7 @@ public class Cluster{
     private final Replicator replicator;
     private final Map<String,NodeMetaData> clusterMembers;
 
-    public Cluster(int n){
+    public Cluster(int n){  
         replicator = new Replicator();
         nodes = new ArrayList<>();
         clusterMembers = new HashMap<>();

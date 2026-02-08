@@ -7,13 +7,6 @@ import org.ds.Replication.utils.LogEntry;
 import org.ds.proto.*;
 import org.ds.proto.RaftServiceGrpc;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-
 public class Replicator {
 
     public void replicateToFollower(
@@ -47,6 +40,8 @@ public class Replicator {
                 .build();
 
         try {
+            //Kinda the beauty of gRPC 
+            // makes it seem like this was just like a method call.
             AppendResponse response = stub.appendEntries(request);
             System.out.println("Response from follower (" + host + ":" + port + ") => " + response.getSuccess());
         } catch (Exception e) {

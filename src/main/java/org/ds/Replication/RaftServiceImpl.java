@@ -23,10 +23,8 @@ public class RaftServiceImpl extends RaftServiceGrpc.RaftServiceImplBase {
             if (request.getTerm() < node.getCurrentTerm()) {
                 success = false;
             } else {
-                if (request.getTerm() > node.getCurrentTerm()) {
-                    node.setCurrentTerm(request.getTerm());
-                }
-
+                if (request.getTerm() > node.getCurrentTerm()) node.setCurrentTerm(request.getTerm());
+                
                 for (org.ds.proto.LogEntry entry : request.getEntriesList()) {
                     node.append(new LogEntry(entry.getIndex(), entry.getTerm(), entry.getCommand()));
                     matchIndex = entry.getIndex();
