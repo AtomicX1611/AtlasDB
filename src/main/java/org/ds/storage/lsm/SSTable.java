@@ -8,27 +8,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.logging.Logger;
 
-/**
- * Immutable, sorted, on-disk key-value file (Sorted String Table).
- *
- * ─── File Layout ──────────────────────────────────────────────────────────
- *
- *   [  Data Section  ]  sorted key-value pairs (offset 0 → indexStart)
- *   [  Index Section ]  sparse index: every SPARSE_FACTOR-th key → file offset
- *   [  Bloom Section ]  serialized Bloom filter
- *   [  Footer        ]  16 bytes: indexStart(8) + bloomStart(8)
- *
- * Data entry encoding:
- *   [keyLen: 4B][key: UTF-8][valLen: 4B][val: UTF-8]
- *   (val may be MemTable.TOMBSTONE to represent a deletion)
- *
- * ─── Read Path ────────────────────────────────────────────────────────────
- * 1. Bloom filter: if key definitely absent, return null immediately (0 I/Os).
- * 2. Sparse index binary search: find largest indexed key ≤ target.
- * 3. Linear scan from that file offset until key found or exceeded.
- *
- * Phase 5: replace linear scan with binary search on block-aligned pages.
- */
 public class SSTable {
     private static final Logger logger = Logger.getLogger(SSTable.class.getName());
 

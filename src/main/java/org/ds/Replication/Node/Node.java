@@ -93,7 +93,7 @@ public class Node {
 
     public void init(Replicator replicator) {
         this.replicator    = replicator;
-        recoverFromDisk();   // restore raftLog + state machine from disk before arming timers
+        recoverFromDisk();   
         this.electionTimer   = new RaftElectionTimer(this);
         this.heartbeatSender = new HeartbeatSender(this, replicator);
         startApplierLoop();
@@ -103,13 +103,6 @@ public class Node {
     }
 
     /**
-     * Crash recovery sequence:
-     *   1. Load persistent metadata (currentTerm, votedFor)
-     *   2. Restore snapshot (state machine + commitIndex/lastApplied)
-     *   3. Replay WAL entries after snapshot to rebuild raftLog
-     *
-     * After recovery the node is in the same durable state it was before the crash.
-     * The election timer will re-elect a leader naturally.
      */
     private void recoverFromDisk() {
         try {
@@ -139,10 +132,7 @@ public class Node {
                 }
             }
 
-            // On recovery, mark all WAL entries that were committed as committed
-            // (commitIndex from snapshot = the last committed entry before snapshot)
-            // WAL entries beyond that were replicated but may not have been committed —
-            // the new leader will re-drive them or they'll be overwritten.
+
 
             logger.info("[" + id + "] Recovery done: term=" + currentTerm
                 + " log=" + raftLog.size() + " lastApplied=" + lastApplied);

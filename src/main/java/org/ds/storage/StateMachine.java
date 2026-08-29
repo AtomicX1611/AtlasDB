@@ -8,17 +8,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.logging.Logger;
 
-/**
- * Deterministic KV state machine — applied by the Raft log applier thread.
- *
- * Backed by an LSM-tree (Phase 2) for durable, sorted on-disk storage.
- * All writes go through LSMEngine which manages the MemTable → SSTable lifecycle.
- *
- * Supported commands:
- *   SET key value  →  "OK"
- *   GET key        →  value or "(nil)"
- *   DEL key        →  "1" (existed) or "0" (not found)
- */
 public class StateMachine {
     private static final Logger logger = Logger.getLogger(StateMachine.class.getName());
 
