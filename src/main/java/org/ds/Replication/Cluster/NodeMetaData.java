@@ -3,7 +3,7 @@ package org.ds.Replication.Cluster;
 import java.util.Map;
 
 public class NodeMetaData {
-    private final String id ;
+    private final String id;
     private final String host;
     private final int port;
 

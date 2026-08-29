@@ -4,10 +4,13 @@ import io.grpc.stub.StreamObserver;
 import org.ds.Replication.Node.Node;
 import org.ds.Replication.utils.LogEntry;
 import org.ds.proto.*;
-import org.ds.proto.RaftServiceGrpc;
+
+import java.util.List;
+import java.util.logging.Logger;
+
 
 public class RaftServiceImpl extends RaftServiceGrpc.RaftServiceImplBase {
-
+    private static final Logger logger = Logger.getLogger(RaftServiceImpl.class.getName());
     private final Node node;
 
     public RaftServiceImpl(Node node) {
@@ -15,56 +18,47 @@ public class RaftServiceImpl extends RaftServiceGrpc.RaftServiceImplBase {
     }
 
     @Override
-    public void appendEntries(AppendRequest request, StreamObserver<AppendResponse> responseObserver) {
-        boolean success = true;
-        int matchIndex = -1;
+    public void appendEntries(AppendRequest request, StreamObserver<AppendResponse> observer) {
+        List<LogEntry> entries = request.getEntriesList().stream()
+            .map(e -> new LogEntry(e.getIndex(), e.getTerm(), e.getCommand()))
+            .toList();
 
-        try {
-            if (request.getTerm() < node.getCurrentTerm()) {
-                success = false;
-            } else {
-                if (request.getTerm() > node.getCurrentTerm()) node.setCurrentTerm(request.getTerm());
-                
-                for (org.ds.proto.LogEntry entry : request.getEntriesList()) {
-                    node.append(new LogEntry(entry.getIndex(), entry.getTerm(), entry.getCommand()));
-                    matchIndex = entry.getIndex();
-                }
-
-                node.setCommitIndex(Math.max(node.getCommitIndex(), request.getLeaderCommit()));
-            }
-        } catch (Exception e) {
-            success = false;
+        boolean success = node.onAppendEntries(
+            request.getTerm(),
+            request.getLeaderId(),
+            request.getPrevLogIndex(),
+            request.getPrevLogTerm(),
+            entries,
+            request.getLeaderCommit()
+        );
+        if (request.getTerm() >= node.getCurrentTerm()) {
+            node.resetElectionTimer();
         }
 
-        AppendResponse response = AppendResponse.newBuilder()
-                .setTerm(node.getCurrentTerm())
-                .setSuccess(success)
-                .setMatchIndex(matchIndex)
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+        observer.onNext(AppendResponse.newBuilder()
+            .setTerm(node.getCurrentTerm())
+            .setSuccess(success)
+            .setMatchIndex(node.getLastLogIndex())
+            .build());
+        observer.onCompleted();
     }
 
     @Override
-    public void requestVote(VoteRequest request, StreamObserver<VoteResponse> responseObserver) {
-        boolean granted = false;
+    public void requestVote(VoteRequest request, StreamObserver<VoteResponse> observer) {
+        boolean granted = node.onRequestVote(
+            request.getTerm(),
+            request.getCandidateId(),
+            request.getLastLogIndex(),
+            request.getLastLogTerm()
+        );
 
-        if (request.getTerm() < node.getCurrentTerm()) {
-            granted = false;
-        } else {
-            if (request.getTerm() > node.getCurrentTerm()) {
-                node.setCurrentTerm(request.getTerm());
-            }
-            granted = true;
-        }
+        logger.info("[" + node.getId() + "] RequestVote from " + request.getCandidateId()
+            + " term=" + request.getTerm() + " → " + (granted ? "GRANTED" : "DENIED"));
 
-        VoteResponse response = VoteResponse.newBuilder()
-                .setTerm(node.getCurrentTerm())
-                .setVoteGranted(granted)
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+        observer.onNext(VoteResponse.newBuilder()
+            .setTerm(node.getCurrentTerm())
+            .setVoteGranted(granted)
+            .build());
+        observer.onCompleted();
     }
-
-
 }
