@@ -1,55 +1,79 @@
 package org.ds.storage;
 
+import org.ds.storage.lsm.LSMEngine;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.logging.Logger;
 
+/**
+ * Deterministic KV state machine — applied by the Raft log applier thread.
+ *
+ * Backed by an LSM-tree (Phase 2) for durable, sorted on-disk storage.
+ * All writes go through LSMEngine which manages the MemTable → SSTable lifecycle.
+ *
+ * Supported commands:
+ *   SET key value  →  "OK"
+ *   GET key        →  value or "(nil)"
+ *   DEL key        →  "1" (existed) or "0" (not found)
+ */
 public class StateMachine {
+    private static final Logger logger = Logger.getLogger(StateMachine.class.getName());
 
-    private final ConcurrentSkipListMap<String, String> store = new ConcurrentSkipListMap<>();
+    private final LSMEngine lsm;
 
+    public StateMachine(Path dataDir) throws IOException {
+        this.lsm = new LSMEngine(dataDir);
+    }
 
     public String apply(String command) {
         if (command == null || command.isBlank()) return "ERR empty command";
         String[] parts = command.trim().split("\\s+", 3);
-
         return switch (parts[0].toUpperCase()) {
             case "SET" -> {
                 if (parts.length < 3) yield "ERR SET requires key and value";
-                store.put(parts[1], parts[2]);
+                lsm.put(parts[1], parts[2]);
                 yield "OK";
             }
             case "GET" -> {
                 if (parts.length < 2) yield "ERR GET requires key";
-                yield store.getOrDefault(parts[1], "(nil)");
+                String v = lsm.get(parts[1]);
+                yield v != null ? v : "(nil)";
             }
             case "DEL" -> {
                 if (parts.length < 2) yield "ERR DEL requires key";
-                yield store.remove(parts[1]) != null ? "1" : "0";
+                boolean existed = lsm.get(parts[1]) != null;
+                lsm.delete(parts[1]);
+                yield existed ? "1" : "0";
             }
             default -> "ERR unknown command: " + parts[0];
         };
     }
 
     public String get(String key) {
-        return store.getOrDefault(key, "(nil)");
+        String v = lsm.get(key);
+        return v != null ? v : "(nil)";
     }
-
 
     public boolean exists(String key) {
-        return store.containsKey(key);
+        return lsm.get(key) != null;
     }
 
-    public ConcurrentSkipListMap<String, String> snapshot() {
-        return new ConcurrentSkipListMap<>(store);
+    /** Returns a deep copy of the current live state (no tombstones). For Raft snapshotting. */
+    public Map<String, String> snapshot() {
+        return lsm.snapshot();
     }
 
-
-    public void restore(ConcurrentSkipListMap<String, String> data) {
-        store.clear();
-        store.putAll(data);
+    /** Restore full state from a Raft snapshot. */
+    public void restore(Map<String, String> data) {
+        lsm.restore(data);
     }
 
-    @Override
-    public String toString() {
-        return store.toString();
+    public void shutdown() {
+        lsm.shutdown();
     }
+
+    public LSMEngine getLsm() { return lsm; }
 }
