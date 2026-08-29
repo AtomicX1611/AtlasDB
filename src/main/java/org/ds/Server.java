@@ -18,7 +18,7 @@ public class Server {
         Runtime.getRuntime().addShutdownHook(new Thread(cluster::shutdown, "shutdown-hook"));
 
         logger.info("Waiting for leader election (timeout 4s)...");
-        cluster.waitForLeader(4_000);
+        cluster.waitForLeader(8_000);
 
         Node leader = cluster.getLeader();
         logger.info("Leader elected → " + leader.getId() + "  (port " + leader.getPort() + ")");
