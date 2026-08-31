@@ -1,269 +1,232 @@
-# AtlasDB — How to Run
+# AtlasDB — Running Guide (Phase 1 → 4)
 
-> **Java · gRPC · Raft Consensus · LSM-Tree Persistence**
+## Project Overview
 
----
-
-## Prerequisites
-
-| Tool        | Version  | Check with          |
-|-------------|----------|---------------------|
-| JDK         | 21+      | `java -version`     |
-| Maven       | 3.9+     | `mvn -version`      |
-| grpcurl     | any      | `grpcurl --version` |
-
-grpcurl install (optional — for manual testing):
-```
-# Windows (Scoop)
-scoop install grpcurl
-
-# macOS
-brew install grpcurl
-```
+AtlasDB is a distributed key-value store built from scratch in Java using:
+- **gRPC + Protobuf** — inter-node RPCs (Raft consensus + client API)
+- **Custom Raft** — leader election, log replication, quorum commits, InstallSnapshot
+- **Custom LSM-tree** — MemTable → SSTable flush, Bloom filters, sparse index
+- **Write-Ahead Log** — CRC32-framed, fdatasync'd for crash durability
+- **Smart Client** — leader caching, NOT_LEADER auto-redirect, batch writes
 
 ---
 
-## Build
+## Quick-Start Options
 
+### Option A — In-Process Demo (simplest, all 3 nodes in one JVM)
 ```powershell
 cd d:\Documents\Atlas_DB
-mvn clean compile
-```
-
-Expected output: `BUILD SUCCESS` — compiles ~40 source files + generates protobuf stubs.
-
----
-
-## Run
-
-### Single command — boots a full 3-node cluster in one JVM process
-
-```powershell
 mvn "-Dexec.mainClass=org.ds.Server" exec:java
 ```
+All 3 nodes share a JVM. Good for debugging.
 
-### What happens (chronologically)
+### Option B — Multi-Process Cluster (Phase 3, production-like)
+```powershell
+# 1. Build the fat JAR (only needed once after source changes)
+mvn package -DskipTests
+# Output: target\atlasdb-jar-with-dependencies.jar  (~18 MB)
 
+# 2. Start 3 nodes as separate JVM processes
+.\scripts\start-cluster.ps1
+# Logs: logs\node-0.log  logs\node-1.log  logs\node-2.log
+
+# 3. Tail a node
+Get-Content logs\node-0.log -Wait
+
+# 4. Stop
+.\scripts\stop-cluster.ps1
 ```
-1. Three gRPC servers start on ports 50050, 50051, 50052
-2. Each node arms a randomized election timer (150–300 ms)
-3. First node to time out starts an election (becomes CANDIDATE, increments term)
-4. Collects votes from 2 out of 3 nodes → wins → becomes LEADER
-5. Leader starts sending heartbeats every 100 ms to suppress follower elections
-6. Demo writes 3 entries through Raft consensus:
-     SET x 10      → replicated to both followers, then committed
-     SET y 20      → same
-     SET name AtlasDB
-7. Reads back from leader's state machine → prints values
-8. Cluster stays live; you can send gRPC requests from another terminal
+
+### Option C — Individual nodes in separate terminals (most visible)
+```powershell
+# Terminal 1
+.\scripts\start-node.ps1 -NodeId node-0 -Port 50050
+
+# Terminal 2
+.\scripts\start-node.ps1 -NodeId node-1 -Port 50051
+
+# Terminal 3
+.\scripts\start-node.ps1 -NodeId node-2 -Port 50052
 ```
 
 ---
 
-## Node Layout (3-node default)
+## Process Count & Port Layout
 
-| Node ID | Port  | Role at Start | gRPC Services Exposed            |
-|---------|-------|---------------|----------------------------------|
-| node-0  | 50050 | FOLLOWER      | RaftService + AtlasService       |
-| node-1  | 50051 | FOLLOWER      | RaftService + AtlasService       |
-| node-2  | 50052 | FOLLOWER      | RaftService + AtlasService       |
+| Node     | Port  | Data Directory    | WAL File              | Meta File             |
+|----------|-------|-------------------|-----------------------|-----------------------|
+| node-0   | 50050 | `data/node-0/`    | `data/node-0/raft.wal`| `data/node-0/meta.bin`|
+| node-1   | 50051 | `data/node-1/`    | `data/node-1/raft.wal`| `data/node-1/meta.bin`|
+| node-2   | 50052 | `data/node-2/`    | `data/node-2/raft.wal`| `data/node-2/meta.bin`|
 
-> After election, exactly one node becomes LEADER. **Any node can receive client requests** — non-leaders return `NOT_LEADER` plus a `leader_hint` (the node ID of the current leader) so the client can redirect.
+Starting with N nodes creates N JVM processes + N gRPC servers + N WAL files on disk.
 
 ---
 
-## Process Count for N Nodes
+## NodeLauncher — CLI Reference (Phase 3)
 
-| Nodes | JVM Processes | Ports Used                    | Majority Needed |
-|-------|---------------|-------------------------------|-----------------|
-| 1     | 1             | 50050                         | 1 (trivial)     |
-| 3     | 1*            | 50050–50052                   | 2               |
-| 5     | 1*            | 50050–50054                   | 3               |
+```
+java -jar target\atlasdb-jar-with-dependencies.jar <nodeId> <host> <port> <peers>
 
-> *Currently all nodes run in one JVM (`Cluster.java`). For true multi-process deployment, run one JVM per node with `NodeLauncher.java` (Docker-ready, Phase 3).
+Arguments:
+  nodeId   Unique node identifier, e.g. node-0
+  host     Bind address, e.g. localhost or 0.0.0.0 (for Docker)
+  port     gRPC listen port, e.g. 50050
+  peers    Comma-separated cluster members: id:host:port,id:host:port,...
 
-### To change node count
+Environment variable equivalents (Docker-compatible):
+  ATLAS_NODE_ID   overrides nodeId
+  ATLAS_HOST      overrides host
+  ATLAS_PORT      overrides port
+  ATLAS_PEERS     overrides peers
+```
 
-Edit `Server.java`, line:
+### Example — 3 terminals, 3 processes:
+```powershell
+$PEERS = "node-0:localhost:50050,node-1:localhost:50051,node-2:localhost:50052"
+java -jar target\atlasdb-jar-with-dependencies.jar node-0 localhost 50050 $PEERS
+java -jar target\atlasdb-jar-with-dependencies.jar node-1 localhost 50051 $PEERS
+java -jar target\atlasdb-jar-with-dependencies.jar node-2 localhost 50052 $PEERS
+```
+
+### Docker-compatible example:
+```dockerfile
+ENV ATLAS_NODE_ID=node-0
+ENV ATLAS_HOST=0.0.0.0
+ENV ATLAS_PORT=50050
+ENV ATLAS_PEERS=node-0:node0:50050,node-1:node1:50050,node-2:node2:50050
+CMD ["java", "-jar", "atlasdb.jar"]
+```
+
+---
+
+## Smart Client — Usage (Phase 4)
+
 ```java
-Cluster cluster = new Cluster(3); // change 3 to any odd number ≥ 1
+List<String> seeds = List.of("localhost:50050", "localhost:50051", "localhost:50052");
+
+try (AtlasClient client = new AtlasClient(seeds)) {
+    // Single write (auto-routed to leader)
+    client.put("name", "AtlasDB");
+
+    // Read
+    String val = client.get("name");   // "AtlasDB"
+    String nil = client.get("ghost");  // null
+
+    // Delete
+    client.delete("name");             // true
+
+    // Batch write — 10 pairs in 1 RPC, pipelined through Raft in parallel
+    Map<String, String> batch = new LinkedHashMap<>();
+    for (int i = 1; i <= 10; i++) batch.put("key" + i, "val" + i);
+    int committed = client.batchPut(batch); // returns count of committed pairs
+}
+```
+
+### Run the demo:
+```powershell
+# Start cluster first (Option A or B above), then:
+java -cp target\atlasdb-jar-with-dependencies.jar org.ds.AtlasClientDemo
 ```
 
 ---
 
-## Inputs / Outputs
+## What Each Node Does
 
-### Internal Raft RPCs (node ↔ node)
-These fire automatically. You don't call these directly.
-
-| RPC            | Direction         | Trigger                    |
-|----------------|-------------------|----------------------------|
-| `RequestVote`  | Candidate → Peers | Election timeout fires      |
-| `AppendEntries`| Leader → Followers| Heartbeat (empty) or write  |
-
-### Client API (`AtlasService`) — your application calls these
-
-**Put (write a key-value pair)**
-```bash
-grpcurl -plaintext \
-  -d '{"key": "user", "value": "alice"}' \
-  localhost:50050 \
-  org.ds.proto.AtlasService/Put
-```
-Response (success):
-```json
-{ "success": true }
-```
-Response (hit a follower):
-```json
-{ "success": false, "error": "NOT_LEADER", "leaderHint": "node-0" }
-```
-
-**Get (read a value)**
-```bash
-grpcurl -plaintext \
-  -d '{"key": "user"}' \
-  localhost:50050 \
-  org.ds.proto.AtlasService/Get
-```
-Response:
-```json
-{ "value": "alice", "found": true }
-```
-Key not found:
-```json
-{ "value": "", "found": false }
-```
-
-**Delete**
-```bash
-grpcurl -plaintext \
-  -d '{"key": "user"}' \
-  localhost:50050 \
-  org.ds.proto.AtlasService/Delete
-```
-Response:
-```json
-{ "deleted": true }
-```
+| Component             | Description |
+|-----------------------|-------------|
+| gRPC server           | Listens for Raft RPCs (AppendEntries, RequestVote, InstallSnapshot) and client RPCs (Put, Get, Delete, BatchPut, GetLeader) |
+| RaftElectionTimer     | Fires every 200–600ms (randomized) if no heartbeat received; triggers election |
+| HeartbeatSender       | Leader sends AppendEntries (empty) to all peers every 100ms |
+| Replicator            | Sends vote requests, replicates log entries, triggers InstallSnapshot for lagging followers |
+| StateMachine          | Deterministic KV store backed by LSMEngine; applies committed Raft log entries |
+| LSMEngine             | MemTable (4MB write buffer) + immutable SSTables on disk |
+| WriteAheadLog         | CRC32-framed, fdatasync'd; replayed on crash recovery |
+| RaftMetadataStore     | Persists currentTerm + votedFor atomically before every RPC response |
+| Snapshotter           | Serializes full state machine state; used for WAL truncation and InstallSnapshot |
 
 ---
 
-## On-Disk Data (Phase 2 — Persistent Storage)
+## What Inputs & Outputs Look Like
 
-After running, the following files are created under `data/` in the project root:
+### Node startup output (in `logs/node-0.log`):
+```
+[17:54:05] [INFO   ] AtlasDB NodeLauncher — Phase 3 Multi-Process
+[17:54:05] [INFO   ] nodeId = node-0  |  address = localhost:50050
+[17:54:05] [INFO   ] [LSM] Recovery complete: 2 SSTables loaded
+[17:54:05] [INFO   ] [WAL] Recovered 3 entries from raft.wal
+[17:54:05] [INFO   ] [node-0] Recovery done: term=5 log=3 lastApplied=2
+[17:54:05] [INFO   ] [node-0] Initialized — election timer armed
+[17:54:06] [INFO   ] [node-0] ★★★ BECAME LEADER for term 6 ★★★
+[17:54:06] [INFO   ] [Replicator] Leader state init: nextIndex=4 for 2 peers
+```
 
+### Client operation output (AtlasClientDemo):
+```
+── 1. Single Writes ──────────────────────────────────────────────
+  PUT  name                 = AtlasDB               →  OK
+  PUT  version              = 3.0                   →  OK
+
+── 3. Batch Put (10 pairs → 1 RPC) ──────────────────────────────
+  BatchPut: 10/10 committed in 47 ms
+
+── 2. Reads ──────────────────────────────────────────────────────
+  GET  name                 →  AtlasDB
+  GET  missing_key          →  (nil)
+
+── 4. Delete ─────────────────────────────────────────────────────
+  DEL  version              →  deleted
+  GET  version              →  (nil)
+```
+
+### Disk layout after running:
 ```
 data/
-├── node-0/
-│   ├── meta.bin          ← Raft metadata: currentTerm + votedFor
-│   ├── raft.wal          ← Write-Ahead Log: every Raft log entry (CRC32-framed)
-│   ├── snapshot.bin      ← State machine snapshot (created every 50 commits)
-│   └── lsm/
-│       ├── sst-000001.sst ← Immutable SSTable (sorted KV pairs)
-│       ├── sst-000002.sst ← Newer SSTable (written when MemTable exceeds 4 MB)
-│       └── ...
-├── node-1/
-│   └── (same structure)
-└── node-2/
-    └── (same structure)
-```
-
-### WAL Record Format
-```
-[MAGIC: 4B][CRC32: 4B][LEN: 4B][PAYLOAD: LEN bytes]
-PAYLOAD = [index: 4B][term: 4B][cmdLen: 4B][command: UTF-8]
-```
-
-### SSTable File Layout
-```
-[Data Section]  sorted key-value pairs
-[Index Section] sparse index: every 16th key → file offset (binary search)
-[Bloom Filter]  probabilistic membership test (1% false positive rate)
-[Footer: 16B]   offsets of index + bloom sections
+  node-0/
+    meta.bin        # 14 bytes — currentTerm(4B) + votedFor string
+    raft.wal        # CRC32-framed log entries
+    snapshot.bin    # serialized KV snapshot (after takeSnapshot())
+    lsm/
+      sst_0000.sst  # immutable SSTable files (after MemTable flush)
+      sst_0001.sst
 ```
 
 ---
 
-## Crash Recovery (Phase 2)
+## Phases Summary
 
-If you kill the process (`Ctrl+C`) and restart, each node:
-1. Reads `meta.bin` → restores `currentTerm` and `votedFor` (safety: no double-votes)
-2. Reads `snapshot.bin` → restores state machine to last snapshot
-3. Replays `raft.wal` from `snapshot.lastIndex + 1` → rebuilds in-memory `raftLog`
-4. Opens all `*.sst` files → restores LSM read layer
-
-The cluster re-elects a new leader within 150–300 ms.
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 1 | Raft consensus (leader election, log replication, quorum commit) | ✅ Done |
+| 2 | LSM-tree (MemTable+SSTable+BloomFilter), WAL, crash recovery, snapshots | ✅ Done |
+| 3 | InstallSnapshot RPC, nextIndex/matchIndex tracking, multi-process NodeLauncher, fat JAR, PowerShell scripts | ✅ Done |
+| 4 | Smart client (leader cache, auto-redirect, discovery), BatchPut RPC (parallel Raft pipeline), GetLeader RPC | ✅ Done |
+| 5 | Background compaction, ReadIndex linearizable reads, benchmarking | 🔜 Planned |
 
 ---
 
-## Observing the Election
+## Resetting State
 
-Watch the terminal for these log lines:
-
-```
-[node-1] Election timeout fired — starting election
-[node-1] ── Starting election for term 1 ──
-[node-0] Granted vote to node-1 for term 1
-[node-2] Granted vote to node-1 for term 1
-[node-1] ★★★ BECAME LEADER for term 2 ★★★
-[node-1] Heartbeat sender STARTED
+To start completely fresh (wipe all persisted data):
+```powershell
+.\scripts\stop-cluster.ps1
+Remove-Item -Recurse -Force data\
 ```
 
 ---
 
-## Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Client (grpcurl / app)              │
-└───────────────────────┬─────────────────────────────────┘
-                        │ AtlasService (Put/Get/Delete)
-                        ▼
-┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│   node-0    │   │   node-1    │   │   node-2    │
-│  :50050     │   │  :50051     │   │  :50052     │
-│  [LEADER]   │   │  [FOLLOWER] │   │  [FOLLOWER] │
-│             │◄──┤             │   │             │
-│  Raft log   │──►│  Raft log   │   │  Raft log   │
-│  meta.bin   │   │  meta.bin   │   │  meta.bin   │
-│  raft.wal   │   │  raft.wal   │   │  raft.wal   │
-│  snapshot   │   │  snapshot   │   │  snapshot   │
-│  LSM-Tree   │   │  LSM-Tree   │   │  LSM-Tree   │
-│  (MemTable) │   │  (MemTable) │   │  (MemTable) │
-│  (SSTable)  │   │  (SSTable)  │   │  (SSTable)  │
-└─────────────┘   └─────────────┘   └─────────────┘
-         AppendEntries (gRPC) ────────────────────►
-         ◄──────────────────── RequestVote (gRPC)
-```
-
----
-
-## Common Issues
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `Port already in use: 50050` | Previous run still alive | Kill previous process |
-| `No leader elected within 4s` | All 3 nodes timed out simultaneously (split vote storm) | Re-run; randomized timers prevent this in practice |
-| `data/` directory missing | First run | Created automatically on startup |
-| grpcurl `Unavailable` | Hit a follower, or cluster not started | Check `leaderHint` in response, use that port |
-
----
-
-## Clean Slate (delete all persistent data)
+## Build Commands Reference
 
 ```powershell
-Remove-Item -Recurse -Force .\data\
+# Compile only
+mvn compile
+
+# Compile + build fat JAR
+mvn package -DskipTests
+
+# In-process demo (no JAR needed)
+mvn "-Dexec.mainClass=org.ds.Server" exec:java
+
+# Run smart client demo (cluster must be running)
+java -cp target\atlasdb-jar-with-dependencies.jar org.ds.AtlasClientDemo
 ```
-
----
-
-## Phase Roadmap
-
-| Phase | Status | Feature |
-|-------|--------|---------|
-| 1     | ✅ Done | Raft election, quorum commit, KV state machine |
-| 2     | ✅ Done | WAL, LSM-tree (MemTable + SSTable + Bloom filter), crash recovery, snapshots |
-| 3     | 🔜 Next | Multi-process deployment (`NodeLauncher`), InstallSnapshot RPC |
-| 4     | 🔜      | Smart client (auto-redirect), batch writes |
-| 5     | 🔜      | Background compaction, ReadIndex linearizable reads, benchmarks |

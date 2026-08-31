@@ -1,0 +1,29 @@
+[17:55:41.671] [INFO   ] ???????????????????????????????????????????????????????
+[17:55:41.671] [INFO   ] ?  AtlasDB NodeLauncher  —  Phase 3 Multi-Process     ?
+[17:55:41.671] [INFO   ] ???????????????????????????????????????????????????????
+[17:55:41.671] [INFO   ] ?  nodeId  = node-2
+[17:55:41.679] [INFO   ] ?  address = localhost:50052
+[17:55:41.679] [INFO   ] ?  cluster = [node-0, node-1, node-2]
+[17:55:41.679] [INFO   ] ???????????????????????????????????????????????????????
+[17:55:41.695] [INFO   ] [LSM] Recovery complete: 0 SSTables loaded
+[17:55:42.062] [INFO   ] [node-2] gRPC server listening on port 50052
+[17:55:42.062] [INFO   ] [WAL] Recovered 0 entries from raft.wal
+[17:55:42.071] [INFO   ] [node-2] Recovery done: term=0 log=0 lastApplied=-1
+[17:55:42.079] [INFO   ] [node-2] Initialized (term=0 log=0 entries) — election timer armed
+[17:55:42.079] [INFO   ] [node-2] Node running. Waiting for election...
+[17:55:42.079] [INFO   ] [node-2] Press Ctrl+C to stop.
+[17:55:42.537] [INFO   ] [node-2] Election timeout fired — starting election
+[17:55:42.537] [INFO   ] [node-2] ?? Starting election for term 1 ??
+[17:55:43.554] [INFO   ] [node-2] Election LOST for term 1 — reverting to FOLLOWER
+[17:55:43.987] [INFO   ] [node-2] Election timeout fired — starting election
+[17:55:43.987] [INFO   ] [node-2] ?? Starting election for term 2 ??
+[17:55:45.003] [INFO   ] [node-2] Election LOST for term 2 — reverting to FOLLOWER
+[17:55:45.420] [INFO   ] [node-2] Election timeout fired — starting election
+[17:55:45.421] [INFO   ] [node-2] ?? Starting election for term 3 ??
+[17:55:46.436] [INFO   ] [node-2] Election LOST for term 3 — reverting to FOLLOWER
+[17:55:46.828] [INFO   ] [node-2] Election timeout fired — starting election
+[17:55:46.828] [INFO   ] [node-2] ?? Starting election for term 4 ??
+[17:55:47.836] [INFO   ] [node-2] Election LOST for term 4 — reverting to FOLLOWER
+[17:55:48.403] [INFO   ] [node-2] Election timeout fired — starting election
+[17:55:48.405] [INFO   ] [node-2] ?? Starting election for term 5 ??
+[17:55:49.413] [INFO   ] [node-2] Election LOST for term 5 — reverting to FOLLOWER

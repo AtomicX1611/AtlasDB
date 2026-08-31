@@ -8,7 +8,6 @@ import org.ds.proto.*;
 import java.util.List;
 import java.util.logging.Logger;
 
-
 public class RaftServiceImpl extends RaftServiceGrpc.RaftServiceImplBase {
     private static final Logger logger = Logger.getLogger(RaftServiceImpl.class.getName());
     private final Node node;
@@ -58,6 +57,33 @@ public class RaftServiceImpl extends RaftServiceGrpc.RaftServiceImplBase {
         observer.onNext(VoteResponse.newBuilder()
             .setTerm(node.getCurrentTerm())
             .setVoteGranted(granted)
+            .build());
+        observer.onCompleted();
+    }
+
+    /**
+     * InstallSnapshot RPC handler (Phase 3).
+     * Invoked by the leader when a follower is too far behind to catch up
+     * via normal AppendEntries (its required log entries were already compacted).
+     */
+    @Override
+    public void installSnapshot(SnapshotRequest request, StreamObserver<SnapshotResponse> observer) {
+        logger.info("[" + node.getId() + "] InstallSnapshot from " + request.getLeaderId()
+            + " term=" + request.getTerm()
+            + " lastIndex=" + request.getLastIncludedIndex()
+            + " lastTerm="  + request.getLastIncludedTerm());
+
+        boolean success = node.onInstallSnapshot(
+            request.getTerm(),
+            request.getLeaderId(),
+            request.getLastIncludedIndex(),
+            request.getLastIncludedTerm(),
+            request.getData().toByteArray()
+        );
+
+        observer.onNext(SnapshotResponse.newBuilder()
+            .setTerm(node.getCurrentTerm())
+            .setSuccess(success)
             .build());
         observer.onCompleted();
     }

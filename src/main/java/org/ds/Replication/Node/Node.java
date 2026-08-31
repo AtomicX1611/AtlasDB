@@ -49,6 +49,10 @@ public class Node {
     private volatile int commitIndex = -1;
     private volatile int lastApplied = -1;
 
+    // ── Snapshot pointers (updated in takeSnapshot, read by Replicator) ───────
+    private volatile int snapshotLastIndex = -1;
+    private volatile int snapshotLastTerm  = 0;
+
     // ── Infrastructure ────────────────────────────────────────────────────────
     private volatile boolean isActive = true;
     private Server           grpcServer;
@@ -102,16 +106,12 @@ public class Node {
             + " log=" + raftLog.size() + " entries) — election timer armed");
     }
 
-    /**
-     */
     private void recoverFromDisk() {
         try {
-            // Step 1: metadata
             RaftMetadataStore.Metadata meta = metaStore.load();
             this.currentTerm = meta.term();
             this.votedFor    = meta.votedFor();
 
-            // Step 2: snapshot
             if (snapshotter.exists()) {
                 SnapshotData snap = snapshotter.load();
                 stateMachine.restore(snap.data());
@@ -120,9 +120,8 @@ public class Node {
                 logger.info("[" + id + "] Snapshot restored: index=" + snap.lastIndex());
             }
 
-            // Step 3: WAL replay (only entries after the snapshot)
             List<WalEntry> walEntries = raftWal.recover();
-            int snapshotLastIndex = commitIndex; // -1 if no snapshot
+            int snapshotLastIndex = commitIndex; 
 
             synchronized (this) {
                 for (WalEntry we : walEntries) {
@@ -141,9 +140,6 @@ public class Node {
         }
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    //  Raft §5.2 — Leader Election
-    // ═════════════════════════════════════════════════════════════════════════
 
     public void startElection() {
         int electionTerm, lastLogIdx, lastLogTrm;
@@ -158,10 +154,9 @@ public class Node {
             lastLogTrm   = lastLogTermUnsafe();
             logger.info("[" + id + "] ── Starting election for term " + electionTerm + " ──");
         }
-        // Persist term+votedFor BEFORE sending vote requests
+        
         persistMeta(currentTerm, id);
 
-        electionTimer.reset();
         List<NodeMetaData> peers = getPeers();
         int majority        = (peers.size() + 1) / 2 + 1;
         int peerVotesNeeded = majority - 1;
@@ -177,7 +172,7 @@ public class Node {
 
         boolean won;
         try {
-            won = voteLatch.await(500, TimeUnit.MILLISECONDS);
+            won = voteLatch.await(1_000, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             won = false;
@@ -189,9 +184,12 @@ public class Node {
             synchronized (this) {
                 if (role == NodeRole.CANDIDATE && currentTerm == electionTerm) {
                     role = NodeRole.FOLLOWER;
-                    logger.info("[" + id + "] Election LOST for term " + electionTerm);
+                    logger.info("[" + id + "] Election LOST for term " + electionTerm
+                        + " — reverting to FOLLOWER");
                 }
             }
+            // Re-arm timer so the follower can start the next round after a random delay
+            if (electionTimer != null) electionTimer.reset();
         }
     }
 
@@ -202,6 +200,7 @@ public class Node {
             currentLeaderId = id;
             logger.info("[" + id + "] ★★★ BECAME LEADER for term " + currentTerm + " ★★★");
         }
+        replicator.initializeLeaderState(getLastLogIndex(), getPeers());
         electionTimer.stop();
         heartbeatSender.start();
     }
@@ -390,10 +389,77 @@ public class Node {
         try {
             snapshotter.save(new SnapshotData(snapIndex, snapTerm, state));
             raftWal.truncateBefore(snapIndex);
+            // Update in-memory snapshot pointers
+            snapshotLastIndex = snapIndex;
+            snapshotLastTerm  = snapTerm;
             logger.info("[" + id + "] Snapshot saved at index=" + snapIndex
                 + " (" + state.size() + " KV pairs)");
         } catch (IOException e) {
             logger.warning("[" + id + "] Snapshot failed: " + e.getMessage());
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  InstallSnapshot (follower side — Phase 3)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Apply an incoming snapshot from the leader.
+     * Called when the leader decides a follower is too far behind to catch up
+     * via normal AppendEntries (i.e., nextIndex <= snapshotLastIndex).
+     *
+     * Protocol:
+     *  1. Reject if leaderTerm < currentTerm.
+     *  2. Skip if snapshot is older than what we already have.
+     *  3. Restore state machine from snapshot bytes.
+     *  4. Discard log entries covered by the snapshot; keep any entries after.
+     *  5. Persist snapshot to disk + truncate WAL.
+     */
+    public synchronized boolean onInstallSnapshot(
+            int leaderTerm, String leaderId,
+            int lastIndex, int lastTerm,
+            byte[] snapshotBytes) {
+
+        if (leaderTerm < currentTerm) return false;
+
+        if (leaderTerm > currentTerm) {
+            currentTerm = leaderTerm;
+            votedFor    = null;
+            persistMeta(currentTerm, null);
+        }
+        currentLeaderId = leaderId;
+        if (role == NodeRole.LEADER && heartbeatSender != null) heartbeatSender.stop();
+        role = NodeRole.FOLLOWER;
+        resetElectionTimer();
+
+        if (lastIndex <= commitIndex) {
+            logger.info("[" + id + "] Ignoring stale snapshot (lastIndex=" + lastIndex
+                + " <= commitIndex=" + commitIndex + ")");
+            return true; // already at or past this snapshot
+        }
+
+        try {
+            SnapshotData snap = snapshotter.deserialize(snapshotBytes);
+            stateMachine.restore(snap.data());
+
+            // Discard log entries covered by the snapshot; keep later entries
+            raftLog.removeIf(e -> e.index <= lastIndex);
+
+            commitIndex       = lastIndex;
+            lastApplied       = lastIndex;
+            snapshotLastIndex = lastIndex;
+            snapshotLastTerm  = lastTerm;
+
+            // Persist snapshot + trim WAL
+            snapshotter.save(snap);
+            raftWal.truncateBefore(lastIndex);
+
+            logger.info("[" + id + "] InstallSnapshot applied: index=" + lastIndex
+                + " term=" + lastTerm + " entries=" + snap.data().size());
+            return true;
+        } catch (IOException e) {
+            logger.warning("[" + id + "] InstallSnapshot failed: " + e.getMessage());
+            return false;
         }
     }
 
@@ -459,6 +525,9 @@ public class Node {
     public int    getCommitIndex()        { return commitIndex; }
     public String getCurrentLeaderId()    { return currentLeaderId; }
     public StateMachine getStateMachine() { return stateMachine; }
+    public Snapshotter  getSnapshotter()  { return snapshotter; }
+    public int  getSnapshotLastIndex()    { return snapshotLastIndex; }
+    public int  getSnapshotLastTerm()     { return snapshotLastTerm; }
 
     public void resetElectionTimer() {
         if (electionTimer != null) electionTimer.reset();
@@ -468,6 +537,11 @@ public class Node {
         return clusterMembers.values().stream()
             .filter(m -> !m.getId().equals(id))
             .toList();
+    }
+
+    /** Returns metadata for any cluster member by ID (including self), or null if unknown. */
+    public NodeMetaData getPeerMetaData(String nodeId) {
+        return clusterMembers.get(nodeId);
     }
 
     public synchronized LogEntry getLogEntry(int index) {

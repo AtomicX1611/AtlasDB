@@ -1,6 +1,8 @@
 package org.ds.storage.snapshot;
 
 import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -96,6 +98,42 @@ public class Snapshotter {
 
             logger.info("[Snapshot] Loaded: index=" + lastIndex
                 + " term=" + lastTerm + " entries=" + numEntries);
+            return new SnapshotData(lastIndex, lastTerm, data);
+        }
+    }
+
+    // ── Wire format helpers (for InstallSnapshot RPC) ─────────────────────────
+
+    /** Serialize a snapshot to raw bytes for embedding in SnapshotRequest.data. */
+    public byte[] serialize(SnapshotData snap) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (DataOutputStream dos = new DataOutputStream(baos)) {
+            dos.writeInt(snap.lastIndex());
+            dos.writeInt(snap.lastTerm());
+            dos.writeInt(snap.data().size());
+            for (Map.Entry<String, String> e : snap.data().entrySet()) {
+                byte[] kb = e.getKey().getBytes(StandardCharsets.UTF_8);
+                byte[] vb = e.getValue().getBytes(StandardCharsets.UTF_8);
+                dos.writeInt(kb.length); dos.write(kb);
+                dos.writeInt(vb.length); dos.write(vb);
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    /** Deserialize raw bytes (from SnapshotRequest.data) into a SnapshotData record. */
+    public SnapshotData deserialize(byte[] raw) throws IOException {
+        try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(raw))) {
+            int lastIndex  = dis.readInt();
+            int lastTerm   = dis.readInt();
+            int n          = dis.readInt();
+            Map<String, String> data = new HashMap<>(n * 2);
+            for (int i = 0; i < n; i++) {
+                int kl = dis.readInt(); byte[] kb = new byte[kl]; dis.readFully(kb);
+                int vl = dis.readInt(); byte[] vb = new byte[vl]; dis.readFully(vb);
+                data.put(new String(kb, StandardCharsets.UTF_8),
+                         new String(vb, StandardCharsets.UTF_8));
+            }
             return new SnapshotData(lastIndex, lastTerm, data);
         }
     }

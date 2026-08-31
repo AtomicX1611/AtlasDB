@@ -9,13 +9,13 @@ import java.util.logging.Logger;
 public class Cluster {
     private static final Logger logger = Logger.getLogger(Cluster.class.getName());
 
-    private final List<Node> nodes;
-    private final Replicator replicator;
+    private final List<Node>       nodes;
+    private final List<Replicator> replicators; // one per node (nextIndex is per-leader)
 
     public Cluster(int n) {
-        this.replicator = new Replicator();
         Map<String, NodeMetaData> members = new LinkedHashMap<>();
-        this.nodes = new ArrayList<>();
+        this.nodes       = new ArrayList<>();
+        this.replicators = new ArrayList<>();
 
         for (int i = 0; i < n; i++) {
             String id   = "node-" + i;
@@ -24,10 +24,12 @@ public class Cluster {
         }
 
         for (NodeMetaData meta : members.values()) {
+            Replicator replicator = new Replicator();   // isolated per node
             Node node = new Node(meta.getId(), meta.getHost(), meta.getPort(), members);
             node.startServer();
             node.init(replicator);
             nodes.add(node);
+            replicators.add(replicator);
         }
 
         logger.info("Cluster of " + n + " nodes started on ports 50050–" + (50050 + n - 1));
@@ -77,6 +79,7 @@ public class Cluster {
     public void shutdown() {
         logger.info("Shutting down cluster...");
         nodes.forEach(Node::shutdown);
-        replicator.shutdown();
+        replicators.forEach(Replicator::shutdown);
     }
 }
+
